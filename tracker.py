@@ -1,15 +1,26 @@
 import requests
 import time
-import json
+import threading
+import os
+from flask import Flask, jsonify
 
-# --- CONFIGURATION ---
+# ============================================
+# CONFIGURATION
+# ============================================
 FRIEND_USERNAME = "Carson_211"
 FRIEND_UUID = "40f592a7-b506-4dfe-9a43-5c2a40c41c7c"
-NTFY_TOPIC = "carson-minecraft-tracker"  # Unique topic for Carson
+NTFY_TOPIC = "carson-minecraft-tracker"
 CHECK_INTERVAL = 30  # Check every 30 seconds
-NTFY_SERVER = "https://ntfy.sh"  # Public server (free)
+NTFY_SERVER = "https://ntfy.sh"
 
-# --- HELPER FUNCTIONS ---
+# ============================================
+# FLASK WEB SERVER (For Render Keep-Alive)
+# ============================================
+app = Flask(__name__)
+
+# ============================================
+# TRACKER FUNCTIONS
+# ============================================
 
 def check_player_online(uuid):
     """Check if player is online using Hypixel API"""
@@ -45,15 +56,13 @@ def send_notification(username, status="online"):
         priority = 3  # Default priority
         tags = "wave, minecraft"
     
-    # Prepare the notification data
     headers = {
         "Title": title,
         "Priority": str(priority),
         "Tags": tags,
-        "Click": "https://minecraft.net",  # Opens Minecraft website when you tap
+        "Click": "https://minecraft.net",
     }
     
-    # Send to ntfy
     try:
         response = requests.post(
             f"{NTFY_SERVER}/{NTFY_TOPIC}",
@@ -67,34 +76,18 @@ def send_notification(username, status="online"):
     except Exception as e:
         print(f"❌ Error sending notification: {e}")
 
-def subscribe_to_ntfy_topic():
-    """Print instructions for subscribing to the ntfy topic"""
-    print("\n" + "="*60)
-    print("📱 TO SET UP YOUR PHONE:")
-    print("="*60)
-    print(f"1. Install the ntfy app from your app store")
-    print(f"   • iOS: https://apps.apple.com/app/ntfy/id1625396347")
-    print(f"   • Android: https://play.google.com/store/apps/details?id=io.heckel.ntfy")
-    print(f"2. Open the app and subscribe to this topic:")
-    print(f"   🔑 Topic: {NTFY_TOPIC}")
-    print(f"3. Go to Settings → Notifications and set custom sound")
-    print(f"   (You can use any MP3 file on your phone)")
-    print("="*60 + "\n")
-
-# --- MAIN SCRIPT ---
-
-def main():
-    print("🎮 Minecraft Friend Tracker")
+def run_tracker():
+    """Main tracking loop - runs continuously in background"""
+    print("🎮 Minecraft Friend Tracker Started")
     print("-" * 40)
     print(f"Tracking: {FRIEND_USERNAME}")
     print(f"UUID: {FRIEND_UUID}")
+    print(f"NTFY Topic: {NTFY_TOPIC}")
+    print(f"Checking every {CHECK_INTERVAL} seconds...")
     print("-" * 40)
-    
-    # Subscribe instructions
-    subscribe_to_ntfy_topic()
-    
-    print(f"🔄 Checking every {CHECK_INTERVAL} seconds...")
-    print("Press Ctrl+C to stop\n")
+    print("📱 Subscribe to the ntfy topic on your phone!")
+    print("   App: https://ntfy.sh/app")
+    print("-" * 40)
     
     was_online = False
     first_check = True
@@ -103,7 +96,6 @@ def main():
         try:
             is_online = check_player_online(FRIEND_UUID)
             
-            # Only send notifications after first check (to avoid false positives)
             if not first_check:
                 if is_online and not was_online:
                     send_notification(FRIEND_USERNAME, "online")
@@ -112,13 +104,12 @@ def main():
                     send_notification(FRIEND_USERNAME, "offline")
                     was_online = False
             else:
-                # First check - just set the initial state
                 was_online = is_online
                 status = "online" if is_online else "offline"
                 print(f"📊 Initial status: {FRIEND_USERNAME} is {status}")
                 first_check = False
             
-            # Show status dot with timestamp
+            # Show status
             dot = "🟢" if is_online else "🔴"
             timestamp = time.strftime('%H:%M:%S')
             status_text = "ONLINE ✅" if is_online else "OFFLINE ❌"
@@ -126,12 +117,57 @@ def main():
             
             time.sleep(CHECK_INTERVAL)
             
-        except KeyboardInterrupt:
-            print("\n\n👋 Stopping tracker. Goodbye!")
-            break
         except Exception as e:
-            print(f"❌ Unexpected error: {e}")
+            print(f"❌ Error in tracker loop: {e}")
             time.sleep(CHECK_INTERVAL)
 
-if __name__ == "__main__":
-    main()
+# ============================================
+# WEB ENDPOINTS (For Render Keep-Alive)
+# ============================================
+
+@app.route('/')
+def home():
+    """Home page showing status"""
+    return jsonify({
+        "service": "Minecraft Friend Tracker",
+        "friend": FRIEND_USERNAME,
+        "uuid": FRIEND_UUID,
+        "status": "running",
+        "topic": NTFY_TOPIC
+    })
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for keep-alive pings"""
+    return jsonify({
+        "status": "alive",
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "friend": FRIEND_USERNAME
+    })
+
+@app.route('/test')
+def test_notification():
+    """Send a test notification to your phone"""
+    send_notification(FRIEND_USERNAME, "online")
+    return jsonify({"message": "Test notification sent!"})
+
+# ============================================
+# MAIN ENTRY POINT
+# ============================================
+
+if __name__ == '__main__':
+    # Start the tracker in a background thread
+    tracker_thread = threading.Thread(target=run_tracker)
+    tracker_thread.daemon = True
+    tracker_thread.start()
+    
+    # Get port from environment (Render sets this automatically)
+    port = int(os.environ.get('PORT', 10000))
+    
+    # Start the web server
+    print(f"🌐 Web server running on port {port}")
+    print(f"📊 Health check: http://localhost:{port}/health")
+    print(f"📱 Test notification: http://localhost:{port}/test")
+    print("=" * 40)
+    
+    app.run(host='0.0.0.0', port=port)
