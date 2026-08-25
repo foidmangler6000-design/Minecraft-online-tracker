@@ -44,8 +44,44 @@ def check_player_online(uuid):
         print(f"⚠️  Connection error: {e}")
         return False
 
+def send_notification_curl(username, status="online"):
+    """Fallback method: Send notification using curl"""
+    if status == "online":
+        message = f"Carson_211 just joined Minecraft! Time to play! 🚀"
+        title = "🎮 Carson is Online!"
+        priority = "5"
+        tags = "partying_face,minecraft"
+    else:
+        message = f"Carson_211 left Minecraft. See you next time!"
+        title = "👋 Carson went Offline"
+        priority = "3"
+        tags = "wave,minecraft"
+    
+    # Format the curl command
+    cmd = [
+        "curl", "-s",
+        "-H", f"Title: {title}",
+        "-H", f"Priority: {priority}",
+        "-H", f"Tags: {tags}",
+        "-H", f"Click: https://minecraft.net",
+        "-d", message,
+        f"{NTFY_SERVER}/{NTFY_TOPIC}"
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            print(f"✅ Curl notification sent successfully!")
+            return True
+        else:
+            print(f"❌ Curl failed: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"❌ Curl exception: {e}")
+        return False
+
 def send_notification(username, status="online"):
-    """Send notification using curl - most reliable method"""
+    """Send notification using requests, fallback to curl"""
     if status == "online":
         message = f"Carson_211 just joined Minecraft! Time to play! 🚀"
         title = "🎮 Carson is Online!"
@@ -94,6 +130,73 @@ def send_notification(username, status="online"):
         print(f"🔄 Trying curl fallback...")
         return send_notification_curl(username, status)
 
+# ============================================
+# MAIN TRACKING LOOP
+# ============================================
+def tracker_loop():
+    """Main background loop that checks player status"""
+    last_status = None
+    
+    print(f"🏠 Minecraft Friend Tracker Started")
+    print(f"Tracking: {FRIEND_USERNAME}")
+    print(f"UUID: {FRIEND_UUID}")
+    print(f"NTFY Topic: {NTFY_TOPIC}")
+    print(f"Checking every {CHECK_INTERVAL} seconds...")
+    
+    while True:
+        try:
+            current_status = check_player_online(FRIEND_UUID)
+            
+            # Only notify if status changed
+            if last_status is None or current_status != last_status:
+                if current_status:
+                    send_notification(FRIEND_USERNAME, "online")
+                else:
+                    send_notification(FRIEND_USERNAME, "offline")
+                last_status = current_status
+                
+        except Exception as e:
+            print(f"⚠️  Main loop error: {e}")
+        
+        time.sleep(CHECK_INTERVAL)
+
+# ============================================
+# FLASK ROUTES (For Render Health Checks)
+# ============================================
+@app.route('/')
+def home():
+    return jsonify({"status": "running", "tracking": FRIEND_USERNAME})
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+@app.route('/test')
+def test():
+    result = send_notification(FRIEND_USERNAME, "online")
+    return jsonify({"notification_sent": result})
+
+# ============================================
+# START SERVER & TRACKER
+# ============================================
+if __name__ == '__main__':
+    # Start the tracker in a background thread
+    tracker_thread = threading.Thread(target=tracker_loop, daemon=True)
+    tracker_thread.start()
+    
+    # Get port from environment
+    port = int(os.environ.get('PORT', 10000))
+    
+    # Use Gunicorn for production, fall back to Flask if not available
+    try:
+        from gunicorn.app.wsgiapp import run
+        print("🚀 Starting with Gunicorn (Production)...")
+        run()
+    except ImportError:
+        print("⚠️  Gunicorn not found, using Flask dev server...")
+        app.run(host='0.0.0.0', port=port)
+    
+    print(f"✅ Server started successfully!")
 def send_notification_curl(username, status="online"):
     """Fallback: Send notification using curl command"""
     if status == "online":
