@@ -44,7 +44,7 @@ def check_player_online(uuid):
         return False
 
 def send_notification(username, status="online"):
-    """Send notification to your phone via ntfy"""
+    """Send notification to your phone via ntfy with detailed logging"""
     if status == "online":
         title = "🎮 Carson is Online!"
         message = f"Carson_211 just joined Minecraft! Time to play! 🚀"
@@ -63,18 +63,32 @@ def send_notification(username, status="online"):
         "Click": "https://minecraft.net",
     }
     
+    print(f"📤 Sending notification to ntfy.sh/{NTFY_TOPIC}")
+    print(f"   Title: {title}")
+    print(f"   Message: {message}")
+    print(f"   Headers: {headers}")
+    
     try:
         response = requests.post(
             f"{NTFY_SERVER}/{NTFY_TOPIC}",
             data=message.encode('utf-8'),
-            headers=headers
+            headers=headers,
+            timeout=10
         )
+        print(f"   Response status: {response.status_code}")
         if response.status_code == 200:
-            print(f"✅ Notification sent: {title}")
+            print(f"✅ Notification sent successfully!")
+            return True
         else:
-            print(f"⚠️  Failed to send notification: {response.status_code}")
+            print(f"❌ Failed with status {response.status_code}")
+            print(f"   Response: {response.text}")
+            return False
+    except requests.exceptions.Timeout:
+        print(f"❌ Connection timeout to ntfy.sh")
+        return False
     except Exception as e:
-        print(f"❌ Error sending notification: {e}")
+        print(f"❌ Exception: {e}")
+        return False
 
 def run_tracker():
     """Main tracking loop - runs continuously in background"""
@@ -87,6 +101,7 @@ def run_tracker():
     print("-" * 40)
     print("📱 Subscribe to the ntfy topic on your phone!")
     print("   App: https://ntfy.sh/app")
+    print("   Topic: " + NTFY_TOPIC)
     print("-" * 40)
     
     was_online = False
@@ -148,8 +163,75 @@ def health_check():
 @app.route('/test')
 def test_notification():
     """Send a test notification to your phone"""
-    send_notification(FRIEND_USERNAME, "online")
-    return jsonify({"message": "Test notification sent!"})
+    print(f"🧪 Test endpoint called at {time.strftime('%H:%M:%S')}")
+    success = send_notification(FRIEND_USERNAME, "online")
+    
+    if success:
+        return jsonify({
+            "message": "Test notification sent successfully!",
+            "topic": NTFY_TOPIC,
+            "friend": FRIEND_USERNAME
+        })
+    else:
+        return jsonify({
+            "message": "Failed to send notification. Check Render logs.",
+            "topic": NTFY_TOPIC,
+            "friend": FRIEND_USERNAME,
+            "status": "error"
+        }), 500
+
+@app.route('/test-offline')
+def test_offline_notification():
+    """Send a test offline notification"""
+    print(f"🧪 Test offline endpoint called at {time.strftime('%H:%M:%S')}")
+    success = send_notification(FRIEND_USERNAME, "offline")
+    
+    if success:
+        return jsonify({
+            "message": "Test offline notification sent successfully!",
+            "topic": NTFY_TOPIC,
+            "friend": FRIEND_USERNAME
+        })
+    else:
+        return jsonify({
+            "message": "Failed to send notification. Check Render logs.",
+            "topic": NTFY_TOPIC,
+            "friend": FRIEND_USERNAME,
+            "status": "error"
+        }), 500
+
+@app.route('/debug')
+def debug_info():
+    """Show debug information about the ntfy connection"""
+    print(f"🔍 Debug endpoint called at {time.strftime('%H:%M:%S')}")
+    
+    # Test the ntfy connection
+    test_result = {
+        "ntfy_server": NTFY_SERVER,
+        "ntfy_topic": NTFY_TOPIC,
+        "friend": FRIEND_USERNAME,
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    # Try to send a test message
+    try:
+        test_response = requests.post(
+            f"{NTFY_SERVER}/{NTFY_TOPIC}",
+            data="Debug test from Render".encode('utf-8'),
+            headers={"Title": "Debug Test"},
+            timeout=5
+        )
+        test_result["connection_test"] = {
+            "status_code": test_response.status_code,
+            "success": test_response.status_code == 200
+        }
+    except Exception as e:
+        test_result["connection_test"] = {
+            "error": str(e),
+            "success": False
+        }
+    
+    return jsonify(test_result)
 
 # ============================================
 # MAIN ENTRY POINT
@@ -168,6 +250,7 @@ if __name__ == '__main__':
     print(f"🌐 Web server running on port {port}")
     print(f"📊 Health check: http://localhost:{port}/health")
     print(f"📱 Test notification: http://localhost:{port}/test")
+    print(f"🔍 Debug info: http://localhost:{port}/debug")
     print("=" * 40)
     
     app.run(host='0.0.0.0', port=port)
