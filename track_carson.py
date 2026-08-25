@@ -299,7 +299,8 @@ if __name__ == '__main__':
     print(f"🔍 Debug info: http://localhost:{port}/debug")
     print("=" * 40)
     
-    app.run(host='0.0.0.0', port=port)            print(f"✅ Notification sent successfully!")
+    app.run(host='0.0.0.0', port=port)            
+    print(f"✅ Notification sent successfully!")
             return True
         else:
             print(f"❌ Failed with status {response.status_code}")
