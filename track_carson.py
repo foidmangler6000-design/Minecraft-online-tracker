@@ -580,3 +580,34 @@ if __name__ == '__main__':
     print("=" * 40)
     
     app.run(host='0.0.0.0', port=port)
+# ============================================
+# START SERVER & TRACKER
+# ============================================
+if __name__ == '__main__':
+    # Start the tracker in a background thread
+    tracker_thread = threading.Thread(target=tracker_loop, daemon=True)
+    tracker_thread.start()
+    
+    # Get port from environment
+    port = int(os.environ.get('PORT', 10000))
+    
+    # Use Gunicorn for production, fall back to Flask if not available
+    try:
+        from gunicorn.app.wsgiapp import run
+        print("🚀 Starting with Gunicorn (Production)...")
+        run()
+    except ImportError:
+        print("⚠️  Gunicorn not found, using Flask dev server...")
+        app.run(host='0.0.0.0', port=port)
+
+# --- CRITICAL FIX: This return statement MUST be inside a function ---
+# Because Gunicorn imports the file, putting 'return True' here will crash it.
+# Move it back to the end of your 'send_notification' function instead!
+
+def final_success_log():
+    print(f"✅ Server started successfully!")
+    return True
+
+# If you really need it to run when the app is loaded (e.g. for a specific check), 
+# you can call the function like this:
+# final_success_log()
